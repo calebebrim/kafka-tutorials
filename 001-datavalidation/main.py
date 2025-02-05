@@ -85,7 +85,7 @@ def attempt_message_fix(stop_event):
         if "Missing required fields" in error:
             if 'id' in original_data:
                 if 'value' not in original_data:
-                    original_data['value'] = "category" + (original_data['id'] % 3)
+                    original_data['value'] = "category" + str(int(original_data['id']) % 3)
                     print("[fixing_messages] Fixed missing 'value' field, sending to silver topic.")
                     producer.produce('silver', key=original_data['id'], value=json.dumps(original_data))
                     continue
@@ -119,10 +119,10 @@ def process_silver(stop_event):
             group_counts[group_key] = {}
             group_counts[group_key]["count"] = 0
             group_counts[group_key]["group_name"] = group_key
-            group_counts[group_key]["ids"] = []
+            group_counts[group_key]["ids"] = set([])
 
         group_counts[group_key]["count"] += 1
-        group_counts[group_key]["ids"].append( data.get("id",-1))
+        group_counts[group_key]["ids"].add( data.get("id",-1))
         print(f"[aggregating_messages] Updated group count for {group_key}: {group_counts[group_key]}")
 
         producer.produce(f'gold_group_by_value', key=group_key, value=str(group_counts[group_key]))
