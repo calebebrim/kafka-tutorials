@@ -1,0 +1,15 @@
+# Use a Python base image
+FROM python:3.9-slim
+
+# Install dependencies
+COPY requirements.txt requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir confluent-kafka[avro]
+
+
+WORKDIR /src
+# Copy the application files
+COPY src .
+
+# Command to run the script
+CMD ["python", "-m", "producers.avro_producer" ]
