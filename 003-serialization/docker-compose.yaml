@@ -59,21 +59,23 @@ services:
 
   protobuf-registry:
     build: 
-      dockerfile: ./docker/dockerfile.buff-server
-      context: .
+      dockerfile: ./proto_schema_registry/docker/dockerfile.buff-server
+      context: ./projects
     ports:
-      - "8080:8080"
+      - "8000:8000"
     volumes:
       - ./schemas:/schemas
     restart: always
     networks:
       - kafka_network
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
   
   avro-producer:
     image: avro-producer
     build:
-      context: .
-      dockerfile: ./docker/dockerfile.avro_producer
+      dockerfile: avro_producer/docker/dockerfile.avro_producer
+      context: ./projects
     environment:
       KAFKA_BROKERS: kafka:9092
       SCHEMA_REGISTRY_URL: http://schema-registry:8081
