@@ -1,0 +1,6 @@
+image:
+  repository: hello-kubernetes
+  tag: latest
+
+service:
+  port: 8080

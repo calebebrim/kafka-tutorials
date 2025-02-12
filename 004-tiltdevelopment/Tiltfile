@@ -1,0 +1,21 @@
+# Define Docker build with live update
+docker_build(
+    "hello-kubernetes",
+    ".",
+    dockerfile="Dockerfile",
+    entrypoint=["flask", "--app", "main.py", "--debug", "run", "--host=0.0.0.0", "--port=8080"],
+    live_update=[
+        sync("src/", "/app/"),
+        run("pip install -r requirements.txt", trigger="requirements.txt"),
+    ]
+)
+
+# Deploy Helm chart
+helm_yaml = helm("helm/hello-kubernetes", name="hello-kubernetes")
+print(helm_yaml)
+
+# Load the Helm-generated YAML into Tilt
+k8s_yaml(helm_yaml)
+
+# Ensure Tilt watches for changes and restarts the deployment
+k8s_resource("hello-kubernetes", port_forwards=8080)
