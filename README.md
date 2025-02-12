@@ -7,6 +7,7 @@ Welcome to the Kafka Tutorials repository! This collection is designed to guide 
 1. [Getting Started with Apache Kafka](#getting-started-with-apache-kafka)
 2. [Data Quality and Medallion Architecture](#data-quality-and-medallion-architecture)
 3. [Data Integration with Kafka](#data-integration-with-kafka)
+4. [Accelerate Kubernetes Development with Tilt](https://github.com/calebebrim/kafka-tutorials/tree/main/004-tiltdevelopment)
 
 ## Getting Started with Apache Kafka
 
@@ -26,11 +27,6 @@ Welcome to the Kafka Tutorials repository! This collection is designed to guide 
 
 **Read the full tutorial here:** [Data Integration with Kafka](https://www.linkedin.com/pulse/002-real-time-request-response-system-kafka-ribeiro-brim-wu71f/)
 
-## Contributing
+## # Accelerate Kubernetes Development with Tilt
 
-Contributions are welcome! If you'd like to contribute, please fork the repository and use a feature branch. Pull requests are warmly welcomed.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).
-
+**Description**: Learn Tilt development like a pro. Full tutorial [here](https://github.com/calebebrim/kafka-tutorials/tree/main/004-tiltdevelopment).
