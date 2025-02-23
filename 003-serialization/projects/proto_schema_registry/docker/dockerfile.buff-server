@@ -1,7 +1,7 @@
 FROM python:3.10
 
 # Set the working directory
-WORKDIR /app
+WORKDIR /
 COPY ./proto_schema_registry/requirements.txt .
 # Install dependencies
 RUN pip install --no-cache-dir -r ./requirements.txt
@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r ./requirements.txt
 # Copy the application files
 COPY ./proto_schema_registry/src ./src
 
-WORKDIR /app/src
+WORKDIR /src
 # Expose the application port
 EXPOSE 8000
 

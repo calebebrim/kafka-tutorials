@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: protobuf-registry
+spec:
+  ports:
+    - port: 8000
+  selector:
+    app: protobuf-registry
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: protobuf-registry
+spec:
+  serviceName: protobuf-registry
+  replicas: 1
+  selector:
+    matchLabels:
+      app: protobuf-registry
+  template:
+    metadata:
+      labels:
+        app: protobuf-registry
+    spec:
+      containers:
+        - name: protobuf-registry
+          image: protobuf-registry
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - mountPath: /schemas
+              name: schemas-volume
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-cluste-0:9093,kafka-cluste-1:9093"
+      volumes:
+        - name: schemas-volume
+          hostPath:
+            path: ./schemas

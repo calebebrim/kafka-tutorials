@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: avro-producer
+spec:
+  ports:
+    - port: 5000
+  selector:
+    app: avro-producer
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: avro-producer
+spec:
+  serviceName: avro-producer
+  replicas: 1
+  selector:
+    matchLabels:
+      app: avro-producer
+  template:
+    metadata:
+      labels:
+        app: avro-producer
+    spec:
+      containers:
+        - name: avro-producer
+          image: avro-producer
+          ports:
+            - containerPort: 5000
+          env:
+            - name: KAFKA_BROKERS
+              value: "INTERNAL://kafka-cluster:9092"
+            - name: SCHEMA_REGISTRY_URL
+              value: "http://schema-registry:8081"
+            - name: TOPIC
+              value: "bronze"

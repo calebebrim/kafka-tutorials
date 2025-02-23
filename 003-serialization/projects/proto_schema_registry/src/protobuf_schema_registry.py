@@ -1,132 +1,71 @@
-import asyncio
 import os
-from threading import Thread
+import logging
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from confluent_kafka import Producer, Consumer, KafkaException
-from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
+from typing import Dict, Any
+from memory_manager import ProtobufMemory
+from schemas import ProtobufSchema
+
+# Configure logger
+logging.basicConfig(level=logging.INFO)
+api_logger = logging.getLogger("api")
 
 app = FastAPI()
 
 # Kafka configuration
-KAFKA_BOOTSTRAP_SERVERS = os.getenv(
-    'KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
-SCHEMA_TOPIC = os.getenv('SCHEMA_TOPIC', 'protobuf_schema_topic')
-GROUP_ID = os.getenv('GROUP_ID', 'protobuf_schema_registry_group')
+KAFKA_BOOTSTRAP_SERVERS: str = os.getenv('KAFKA_BOOTSTRAP_SERVERS', 'localhost:9092')
+SCHEMA_TOPIC: str = os.getenv('SCHEMA_TOPIC', 'protobuf_schema_topic')
+GROUP_ID: str = os.getenv('GROUP_ID', 'protobuf_schema_registry_group')
 
-# In-memory storage for schemas (replace with persistent storage in production)
-schemas = {}
+# Initialize memory manager for schema storage
+schema_memory: ProtobufMemory = ProtobufMemory()
 
-# Function to generate Protobuf classes dynamically in Python
-
-
-def generate_protobuf(schema_id, schema_proto):
-    file_descriptor_proto = descriptor_pb2.FileDescriptorProto()
-
-    # Parse the `.proto` file definition as a plain string
-    file_descriptor_proto.name = f"{schema_id}.proto"
-    file_descriptor_proto.syntax = "proto3"
-    file_descriptor_proto.message_type.add(name=schema_id)
-
-    pool = descriptor_pool.Default()
-    file_descriptor = pool.Add(file_descriptor_proto)
-
-    factory = message_factory.MessageFactory()
-    message_class = factory.GetPrototype(
-        file_descriptor.message_types_by_name.get(schema_id))
-
-    if not message_class:
-        raise ValueError(f"Message type '{schema_id}' not found in schema.")
-
-    return message_class
-
-
-class KafkaProducer:
-    def __init__(self, configs, loop=None):
-        self._loop = loop or asyncio.get_event_loop()
-        self._producer = Producer(configs)
-        self._cancelled = False
-        self._poll_thread = Thread(target=self._poll_loop)
-        self._poll_thread.start()
-
-    def _poll_loop(self):
-        while not self._cancelled:
-            self._producer.poll(0.1)
-
-    def close(self):
-        self._cancelled = True
-        self._poll_thread.join()
-
-    async def produce(self, topic, key, value):
-        result = self._loop.create_future()
-
-        def ack(err, msg):
-            if err:
-                self._loop.call_soon_threadsafe(
-                    result.set_exception, KafkaException(err))
-            else:
-                self._loop.call_soon_threadsafe(result.set_result, msg)
-
-        self._producer.produce(topic, key=key, value=value, on_delivery=ack)
-        return await result
-
+app.state.memory_manager = schema_memory 
 
 class SchemaRequest(BaseModel):
     schema_id: str
-    schema: str
+    schema_text: str
 
+@app.post("/schemas")
+async def create_schema(text: str) -> Dict[str, Any]:
+    schema: ProtobufSchema = ProtobufSchema.parse(text)
+    if not schema:
+        raise HTTPException(status_code=400, detail="Invalid schema format")
 
-@app.post("/schemas/")
-async def create_schema(request: SchemaRequest):
-    schema_id = request.schema_id
-    schema = request.schema
+    version: int = app.state.memory_manager.add_schema(schema)
+    api_logger.info(f"Schema {schema.schema_id} created - Version {version}")
+    
+    return app.state.memory_manager.get_schema(version).to_json()
 
-    if schema_id in schemas:
-        schemas[schema_id].append(schema)
-    else:
-        schemas[schema_id] = [schema]
-
-    module = generate_protobuf(schema_id, schema)
-
-    await app.state.producer.produce(
-        SCHEMA_TOPIC,
-        key=schema_id.encode('utf-8'),
-        value=schema.encode('utf-8')
-    )
-    return {"schema_id": schema_id, "version": len(schemas[schema_id])}
-
+@app.get("/schemas/")
+async def list_schemas() -> Dict[str, Any]:
+    return {"schemas": app.state.memory_manager.list_schemas()}
 
 @app.get("/schemas/{schema_id}")
-async def read_schema(schema_id: str, version: int = None):
-    if schema_id not in schemas:
+async def get_schema(schema_id: str) -> Dict[str, Any]:
+    schema: ProtobufSchema = app.state.memory_manager.get_schema(schema_id)
+    if not schema:
         raise HTTPException(status_code=404, detail="Schema not found")
-    if version is None:
-        return {"schema": schemas[schema_id][-1], "version": len(schemas[schema_id])}
-    if version > len(schemas[schema_id]) or version < 1:
-        raise HTTPException(status_code=404, detail="Version not found")
-    return {"schema": schemas[schema_id][version - 1], "version": version}
-
+    return {"schema_id": schema.schema_id, "version": schema.schema_id_version, "schema": schema.serialize_to_text()}
 
 @app.delete("/schemas/{schema_id}")
-async def delete_schema(schema_id: str):
-    if schema_id not in schemas:
+async def delete_schema(schema_id: str) -> Dict[str, str]:
+    success: bool = app.state.memory_manager.delete_schema(schema_id)
+    if not success:
         raise HTTPException(status_code=404, detail="Schema not found")
-    del schemas[schema_id]
-    return {"message": f"Schema {schema_id} deleted successfully"}
-
+    return {"message": "Schema deleted"}
 
 @app.delete("/schemas/")
-async def delete_all_schemas():
-    schemas.clear()
-    return {"message": "All schemas deleted successfully"}
-
+async def delete_all_schemas() -> Dict[str, str]:
+    app.state.memory_manager.clear_all()
+    return {"message": "All schemas deleted"}
 
 @app.on_event("startup")
-async def startup_event():
-    app.state.producer = KafkaProducer(
-        {'bootstrap.servers': KAFKA_BOOTSTRAP_SERVERS})
-
+async def startup_event() -> None:
+    api_logger.info("Starting up...")
+    api_logger.info("Startup completed")
 
 @app.on_event("shutdown")
-async def shutdown_event():
-    app.state.producer.close()
+async def shutdown_event() -> None:
+    app.state.memory_manager.close()
+    api_logger.info("Shutdown completed")

@@ -16,15 +16,26 @@ deploy:
 
 # Test adding multiple versions of a schema
 test-create-multiple:
-	curl -X POST "http://localhost:8000/schemas/" \
-	-H "Content-Type: application/json" \
-	-d '{"schema_id": "test_schema", "schema": "syntax = \"proto3\"; message Test { string name = 1; }"}'
-	curl -X POST "http://localhost:8000/schemas/" \
-	-H "Content-Type: application/json" \
-	-d '{"schema_id": "test_schema", "schema": "syntax = \"proto3\"; message Test { string name = 1; int32 age = 2; }"}'
-	curl -X POST "http://localhost:8000/schemas/" \
-	-H "Content-Type: application/json" \
-	-d '{"schema_id": "test_schema", "schema": "syntax = \"proto3\"; message Test { string name = 1; int32 age = 2; string email = 3; }"}'
+	curl -X POST "http://localhost:8000/schemas" \
+	-H "Content-Type: text/plain" \
+	-d <<EOF \
+		syntax = "proto3"; \ 
+		message Test { \
+			string name = 1; \ 
+		} \
+	EOF
+	@echo ''
+	@echo '----'
+	curl -X POST "http://localhost:8000/schemas" \
+	-H "Content-Type: text/plain" \
+	-d 'syntax = "proto3"; message Test { string name = 1; int32 age = 2; }'
+	@echo ''
+	@echo '----'
+	curl -X POST "http://localhost:8000/schemas" \
+	-H "Content-Type: text/plain" \
+	-d 'syntax = "proto3"; message Test { string name = 1; int32 age = 2; string email = 3; }'
+	@echo ''
+	@echo '----'
 
 # Test retrieving the latest schema version
 test-get-latest:
@@ -48,3 +59,6 @@ clean:
 # Cleanup all schemas from the server
 test-delete-all:
 	curl -X DELETE "http://localhost:8000/schemas/"
+
+
+

@@ -1,0 +1,69 @@
+# Tiltfile for deploying services without docker-compose
+KAFKA_EXTERNAL_URL = "localhost:9093"
+KAFKA_INTERNAL_URL = "kafka:9092"
+KAFKA_LISTENERS = "PLAINTEXT://" + KAFKA_EXTERNAL_URL + ",PLAINTEXT_INTERNAL://" + KAFKA_INTERNAL_URL
+
+# Define services manually
+services = [
+    {
+        'name': 'zookeeper',
+        'image': 'confluentinc/cp-zookeeper:latest',
+        'env': {
+            'ZOOKEEPER_CLIENT_PORT': '2181',
+            'ZOOKEEPER_TICK_TIME': '2000'
+        },
+        'port_forwards': [2181, 2000]
+    },
+    {
+        'name': 'kafka-cluster',
+        'image': 'confluentinc/cp-kafka:latest',
+        'env': {
+            "KAFKA_ZOOKEEPER_CONNECT": "zookeeper:2181",
+            "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT",
+            "KAFKA_INTER_BROKER_LISTENER_NAME": "PLAINTEXT_INTERNAL",
+            "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": 1,
+            "KAFKA_LOG_RETENTION_HOURS": 1
+        },
+        'port_forwards': [9093]  # Forwarding external Kafka port
+    },
+    {
+        'name': 'conf-schema-registry',
+        'image': 'confluentinc/cp-schema-registry:latest',
+        'env': {
+            'SCHEMA_REGISTRY_HOST_NAME': 'conf-schema-registry',
+            'SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS': "PLAINTEXT://" + KAFKA_INTERNAL_URL,
+            'SCHEMA_REGISTRY_LISTENERS': 'http://conf-schema-registry:8081'
+        },
+        'port_forwards': [8081]
+    },
+    {
+        'name': 'protobuf-registry',
+        'image': 'protobuf-registry',
+        'context': './projects',
+        'dockerfile': './proto_schema_registry/docker/dockerfile.buff-server',
+        'volumes': ['./schemas:/schemas'],
+        'env': {
+            'KAFKA_BOOTSTRAP_SERVERS': KAFKA_INTERNAL_URL
+        },
+        'port_forwards': [50051]
+    },
+    {
+        'name': 'avro-producer',
+        'image': 'avro-producer',
+        'context': './projects',
+        'dockerfile': 'avro_producer/docker/dockerfile.avro_producer',
+        'env': {
+            'KAFKA_BROKERS': KAFKA_INTERNAL_URL,
+            'SCHEMA_REGISTRY_URL': 'http://schema-registry:8081',
+            'TOPIC': 'bronze'
+        },
+        'port_forwards': [50052]
+    }
+]
+
+# Build and deploy services manually
+for service in services:
+    if 'dockerfile' in service:  # Only build services that require it
+        docker_build(service['image'], service['context'], dockerfile=service['context']+"/"+service['dockerfile'])
+    k8s_yaml("deployments/"+service['name']+".yaml")  # Assuming k8s YAML manifests are available
+    k8s_resource(service['name'], port_forwards=service.get('port_forwards', []))

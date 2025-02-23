@@ -1,0 +1,38 @@
+# schema-registry.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: conf-schema-registry
+spec:
+  ports:
+    - port: 8081
+  selector:
+    app: conf-schema-registry
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: conf-schema-registry
+spec:
+  serviceName: conf-schema-registry
+  replicas: 1
+  selector:
+    matchLabels:
+      app: conf-schema-registry
+  template:
+    metadata:
+      labels:
+        app: conf-schema-registry
+    spec:
+      containers:
+        - name: conf-schema-registry
+          image: confluentinc/cp-schema-registry:latest
+          ports:
+            - containerPort: 8081
+          env:
+            - name: SCHEMA_REGISTRY_HOST_NAME
+              value: "conf-schema-registry"
+            - name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS
+              value: "kafka-cluster-0.kafka-cluster.default.svc.cluster.local:9093,kafka-cluster-1.kafka-cluster.default.svc.cluster.local:9093,kafka-cluster-2.kafka-cluster.default.svc.cluster.local:9093"
+            - name: SCHEMA_REGISTRY_LISTENERS
+              value: "http://conf-schema-registry:8081"
