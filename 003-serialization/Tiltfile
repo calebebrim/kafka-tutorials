@@ -14,7 +14,7 @@ KAFKA_INTERNAL_URL =   "kafka-cluster-strimzy-kafka-bootstrap.strimzi.svc:9092"
 
 
 def helm_deployment_handling(service):
-    helm_repo(service['repo_name'], service['repo'])
+    helm_repo(service['repo_name'], service['repo'], labels=service.get('labels', []))
     helm_resource(
         name=service['name'],
         chart=service['repo_name']+'/'+service['chart'],
@@ -54,6 +54,7 @@ services = [
             'SCHEMA_REGISTRY_LISTENERS': 'http://0.0.0.0:8081'
         },
         'port_forwards': ['8081:8081'],
+        'labels': ['schema-registry'],
         'namespace': 'default'
     },
     {
@@ -64,6 +65,7 @@ services = [
         'env': {
             'KAFKA_BOOTSTRAP_SERVERS': KAFKA_INTERNAL_URL
         },
+        'labels': ['schema-registry'],
         'port_forwards': ["8000:8000"],
         'namespace': 'default'
     },
@@ -138,7 +140,7 @@ for service in services:
             print('-------------------Custom Resource:', cr_kind,'-------------------')
             k8s_kind(kind=cr_kind)
             k8s_resource(cr_name, labels=service.get('labels', []))
-            
+
         obj['metadata']['namespace'] = service.get('namespace', 'default') 
 
     # for obj in objects:
