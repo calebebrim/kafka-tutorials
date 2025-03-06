@@ -21,6 +21,7 @@ def helm_deployment_handling(service):
         resource_deps=[service['repo_name']],
         namespace=service['namespace'],
         flags=service.get('flags', []),
+        labels=service.get('labels', []),
     )
 
 # Define services manually
@@ -29,6 +30,7 @@ services = [
         'kind': 'helm',
         'name': 'strimzi-kafka-operator',
         'namespace': 'strimzi',
+        'labels': ['strimzi'],
         'repo_name': 'strimzi',
         'repo': 'https://strimzi.io/charts/',
         'chart': 'strimzi-kafka-operator',
@@ -38,6 +40,7 @@ services = [
         'name': 'kafka-cluster-strimzy',
         'kind': 'custom-resource',
         'namespace': 'strimzi',
+        'labels': ['strimzi'],
         'custom-resource-kind': 'kafka',
         '_comment': 'original instalation command: kubectl apply -f https://strimzi.io/examples/latest/kafka/kraft/kafka-single-node.yaml -n strimzi -o yaml',
         'deps': ['strimzi-kafka-operator']
@@ -89,14 +92,16 @@ for ns in set([service['namespace'] for service in services if 'namespace' in se
 print('-------------------Deploying Services-------------------')
 # Build and deploy services manually
 for service in services:
+    service_kind = service.get('kind', '')
+    
     if 'dockerfile' in service:  # Only build services that require it
         docker_build(service['image'], service['context'], dockerfile=service['context']+"/"+service['dockerfile'])
 
-    if service.get('kind','') == 'helm':
+    if service_kind == 'helm':
         helm_deployment_handling(service)
         continue
     
-    if service.get('kind','') == 'custom':
+    if service_kind == 'custom':
         k8s_custom_deploy(
             name=service['name'],
             apply_cmd=service['apply'],
@@ -112,7 +117,7 @@ for service in services:
     for obj in objects:
         kind = obj.get('kind', '')
         if kind in ['StatefulSet', 'Deployment']:
-            print("--------------------"+service['name']+"-envs----------------------")
+            print("-----------"+service['name']+"-envs------------")
             print("Environment variables for service:", service['name'])
 
             for env_key, env_value in service.get('env', {}).items():
@@ -125,7 +130,15 @@ for service in services:
                             for env_key, env_value in service.get('env', {}).items():
                                 container['env'].append({'name': env_key, 'value': str(env_value)})
         
-       
+        
+        
+        if service_kind in ['custom-resource']:
+            cr_kind = obj.get('kind','')
+            cr_name = obj.get('metadata',{}).get('name','')
+            print('-------------------Custom Resource:', cr_kind,'-------------------')
+            k8s_kind(kind=cr_kind)
+            k8s_resource(cr_name, labels=service.get('labels', []))
+            
         obj['metadata']['namespace'] = service.get('namespace', 'default') 
 
     # for obj in objects:
@@ -134,11 +147,8 @@ for service in services:
     # Apply the modified YAML
     k8s_yaml(encode_yaml_stream(objects))
 
-    if service.get('kind','') in ['custom-resource' ]:
-        # k8s_resource(new_name=service['name'], objects=[])
-        k8s_kind(kind=service.get('custom-resource-kind',''))
-        continue
-    
-    
-    
-    k8s_resource(service['name'], port_forwards=service.get('port_forwards', []))
+    if service_kind != 'custom-resource':
+        k8s_resource(service['name'], port_forwards=service.get('port_forwards', []), labels=service.get('labels', []))
+
+
+    k8s_resource(service['name'], port_forwards=service.get('port_forwards', []), labels=service.get('labels', []))
