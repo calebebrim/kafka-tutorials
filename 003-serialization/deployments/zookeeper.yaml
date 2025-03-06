@@ -1,8 +1,10 @@
+
 # zookeeper.yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: zookeeper
+  namespace: kafka
 spec:
   ports:
     - port: 2181
@@ -13,6 +15,7 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: zookeeper
+  namespace: kafka
 spec:
   serviceName: zookeeper
   replicas: 1

@@ -9,7 +9,7 @@ spec:
     app: protobuf-registry
 ---
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   name: protobuf-registry
 spec:
@@ -28,13 +28,6 @@ spec:
           image: protobuf-registry
           ports:
             - containerPort: 8000
-          volumeMounts:
-            - mountPath: /schemas
-              name: schemas-volume
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: "kafka-cluste-0:9093,kafka-cluste-1:9093"
-      volumes:
-        - name: schemas-volume
-          hostPath:
-            path: ./schemas

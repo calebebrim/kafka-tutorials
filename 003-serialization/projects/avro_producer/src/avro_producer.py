@@ -16,6 +16,7 @@ app = Flask(__name__)
 # Environment variables
 kafka_brokers = os.getenv('KAFKA_BROKERS', 'localhost:9093')
 schema_registry_url = os.getenv('SCHEMA_REGISTRY_URL', 'http://localhost:8081')
+flask_port = int(os.getenv('FLASK_RUN_PORT', 5000))
 
 # Initialize Kafka producer
 producer = create_kafka_producer(kafka_brokers)
@@ -54,4 +55,8 @@ def produce_message(topic):
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+
+    
+    logger.info(f"Connecting to Schema Registry at {schema_registry_url}")
+    logger.info(f"Starting Flask server on port {flask_port}")
+    app.run(host="0.0.0.0", port=flask_port, debug=True)

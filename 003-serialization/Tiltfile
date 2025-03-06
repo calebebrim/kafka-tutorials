@@ -1,51 +1,68 @@
-# Tiltfile for deploying services without docker-compose
-KAFKA_EXTERNAL_URL = "localhost:9093"
-KAFKA_INTERNAL_URL = "kafka:9092"
-KAFKA_LISTENERS = "PLAINTEXT://" + KAFKA_EXTERNAL_URL + ",PLAINTEXT_INTERNAL://" + KAFKA_INTERNAL_URL
+load('ext://namespace', 'namespace_create', 'namespace_inject')
+load('ext://helm_resource', 'helm_resource', 'helm_repo')
+
+MAX_TIMEOUT=300
+
+# This line sets the Kubernetes upsert timeout to the value of MAX_TIMEOUT.
+# 'update_settings' is a function that configures various settings for Tilt,
+# and 'k8s_upsert_timeout_secs' specifies the maximum time (in seconds) to wait
+# for Kubernetes resources to be created or updated.
+update_settings(k8s_upsert_timeout_secs=MAX_TIMEOUT)
+
+
+KAFKA_INTERNAL_URL =   "kafka-cluster-strimzy-kafka-bootstrap.strimzi.svc:9092"
+
+
+def helm_deployment_handling(service):
+    helm_repo(service['repo_name'], service['repo'])
+    helm_resource(
+        name=service['name'],
+        chart=service['repo_name']+'/'+service['chart'],
+        resource_deps=[service['repo_name']],
+        namespace=service['namespace'],
+        flags=service.get('flags', []),
+    )
 
 # Define services manually
 services = [
     {
-        'name': 'zookeeper',
-        'image': 'confluentinc/cp-zookeeper:latest',
-        'env': {
-            'ZOOKEEPER_CLIENT_PORT': '2181',
-            'ZOOKEEPER_TICK_TIME': '2000'
-        },
-        'port_forwards': [2181, 2000]
+        'kind': 'helm',
+        'name': 'strimzi-kafka-operator',
+        'namespace': 'strimzi',
+        'repo_name': 'strimzi',
+        'repo': 'https://strimzi.io/charts/',
+        'chart': 'strimzi-kafka-operator',
+        'deps': [],
     },
     {
-        'name': 'kafka-cluster',
-        'image': 'confluentinc/cp-kafka:latest',
-        'env': {
-            "KAFKA_ZOOKEEPER_CONNECT": "zookeeper:2181",
-            "KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT",
-            "KAFKA_INTER_BROKER_LISTENER_NAME": "PLAINTEXT_INTERNAL",
-            "KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": 1,
-            "KAFKA_LOG_RETENTION_HOURS": 1
-        },
-        'port_forwards': [9093]  # Forwarding external Kafka port
+        'name': 'kafka-cluster-strimzy',
+        'kind': 'custom-resource',
+        'namespace': 'strimzi',
+        'custom-resource-kind': 'kafka',
+        '_comment': 'original instalation command: kubectl apply -f https://strimzi.io/examples/latest/kafka/kraft/kafka-single-node.yaml -n strimzi -o yaml',
+        'deps': ['strimzi-kafka-operator']
     },
     {
         'name': 'conf-schema-registry',
         'image': 'confluentinc/cp-schema-registry:latest',
         'env': {
             'SCHEMA_REGISTRY_HOST_NAME': 'conf-schema-registry',
-            'SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS': "PLAINTEXT://" + KAFKA_INTERNAL_URL,
-            'SCHEMA_REGISTRY_LISTENERS': 'http://conf-schema-registry:8081'
+            'SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS': KAFKA_INTERNAL_URL,
+            'SCHEMA_REGISTRY_LISTENERS': 'http://0.0.0.0:8081'
         },
-        'port_forwards': [8081]
+        'port_forwards': ['8081:8081'],
+        'namespace': 'default'
     },
     {
         'name': 'protobuf-registry',
         'image': 'protobuf-registry',
         'context': './projects',
         'dockerfile': './proto_schema_registry/docker/dockerfile.buff-server',
-        'volumes': ['./schemas:/schemas'],
         'env': {
             'KAFKA_BOOTSTRAP_SERVERS': KAFKA_INTERNAL_URL
         },
-        'port_forwards': [50051]
+        'port_forwards': ["8000:8000"],
+        'namespace': 'default'
     },
     {
         'name': 'avro-producer',
@@ -54,16 +71,74 @@ services = [
         'dockerfile': 'avro_producer/docker/dockerfile.avro_producer',
         'env': {
             'KAFKA_BROKERS': KAFKA_INTERNAL_URL,
-            'SCHEMA_REGISTRY_URL': 'http://schema-registry:8081',
-            'TOPIC': 'bronze'
+            'SCHEMA_REGISTRY_URL': 'http://conf-schema-registry:8081',
+            'TOPIC': 'bronze',
+            'FLASK_RUN_PORT': '9595'
         },
-        'port_forwards': [50052]
+        'port_forwards': ["9595:9595"],
+        'namespace': 'default'
     }
 ]
 
+# Create Namespaces
+print('-------------------Creating Namespaces-------------------')
+for ns in set([service['namespace'] for service in services if 'namespace' in service]):
+    print('Creating namespace:', ns)
+    namespace_create(ns)
+
+print('-------------------Deploying Services-------------------')
 # Build and deploy services manually
 for service in services:
     if 'dockerfile' in service:  # Only build services that require it
         docker_build(service['image'], service['context'], dockerfile=service['context']+"/"+service['dockerfile'])
-    k8s_yaml("deployments/"+service['name']+".yaml")  # Assuming k8s YAML manifests are available
+
+    if service.get('kind','') == 'helm':
+        helm_deployment_handling(service)
+        continue
+    
+    if service.get('kind','') == 'custom':
+        k8s_custom_deploy(
+            name=service['name'],
+            apply_cmd=service['apply'],
+            delete_cmd=service['delete'],
+            deps=service.get('deps', []),
+        )
+        continue
+
+    yaml_path = "deployments/"+service['name']+".yaml"
+    objects = read_yaml_stream(yaml_path)
+    # Iterate over each object and set the namespace
+    # Filter and print only StatefulSet or Deployment objects
+    for obj in objects:
+        kind = obj.get('kind', '')
+        if kind in ['StatefulSet', 'Deployment']:
+            print("--------------------"+service['name']+"-envs----------------------")
+            print("Environment variables for service:", service['name'])
+
+            for env_key, env_value in service.get('env', {}).items():
+                print("{}: {}".format(env_key, env_value))
+                if 'spec' in obj and 'template' in obj['spec'] and 'spec' in obj['spec']['template']:
+                    if 'containers' in obj['spec']['template']['spec']:
+                        for container in obj['spec']['template']['spec']['containers']:
+                            if 'env' not in container:
+                                container['env'] = []
+                            for env_key, env_value in service.get('env', {}).items():
+                                container['env'].append({'name': env_key, 'value': str(env_value)})
+        
+       
+        obj['metadata']['namespace'] = service.get('namespace', 'default') 
+
+    # for obj in objects:
+
+    #     obj['metadata']['namespace'] = 'development'
+    # Apply the modified YAML
+    k8s_yaml(encode_yaml_stream(objects))
+
+    if service.get('kind','') in ['custom-resource' ]:
+        # k8s_resource(new_name=service['name'], objects=[])
+        k8s_kind(kind=service.get('custom-resource-kind',''))
+        continue
+    
+    
+    
     k8s_resource(service['name'], port_forwards=service.get('port_forwards', []))

@@ -24,7 +24,7 @@ test-protobuf-server:
 
 .PHONY: all install-kind install-tilt install-helm init-docker-repo init-kind-cluster start-kind stop-kind clean
 
-all: install-kind install-tilt install-helm init-docker-repo init-kind-cluster start-kind
+all: install-kind install-tilt install-helm start-kind
 
 install-kind:
 	curl -Lo ./kind https://kind.sigs.k8s.io/dl/$(KIND_VERSION)/kind-linux-amd64
@@ -42,10 +42,19 @@ init-docker-repo:
 		docker run -d --restart=always -p 5000:5000 --name $(DOCKER_REGISTRY) registry:2; \
 	fi
 
-init-kind-cluster:
+create-mounts:
+	@mkdir -p /tmp/kind/mnt
+
+init-kind-cluster: create-mounts
 	kind create cluster --name $(KIND_CLUSTER_NAME) --config=kind-config.yaml
 	docker network connect $(DOCKER_NETWORK) $(DOCKER_REGISTRY) || true
-	echo '127.0.0.1 $(DOCKER_REGISTRY)' | sudo tee -a /etc/hosts
+	@if ! grep -q '127.0.0.1 $(DOCKER_REGISTRY)' /etc/hosts; then \
+		echo '127.0.0.1 $(DOCKER_REGISTRY)' | sudo tee -a /etc/hosts; \
+	fi
+
+
+start-kind: init-docker-repo init-kind-cluster
+
 
 stop-kind:
 	kind delete cluster --name $(KIND_CLUSTER_NAME)
